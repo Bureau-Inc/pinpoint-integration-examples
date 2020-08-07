@@ -1,0 +1,28 @@
+{
+  "name": "bureau-sample-backend",
+  "version": "1.0.0",
+  "description": "Bureau sample backend repository for merchants",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.19.2",
+    "express": "^4.17.1",
+    "ioredis": "^4.17.3",
+    "pg": "^8.2.1",
+    "serverless": "^1.63.0",
+    "serverless-express": "^2.0.11",
+    "serverless-http": "^2.3.1",
+    "serverless-plugin-include-dependencies": "^4.0.1",
+    "serverless-plugin-tracing": "^2.0.0",
+    "uuid": "^3.4.0"
+  },
+  "devDependencies": {
+    "serverless-bundle": "^1.8.0",
+    "serverless-dotenv-plugin": "^2.4.2",
+    "serverless-offline": "^6.4.0"
+  }
+}
