@@ -1,0 +1,1 @@
+export const getPhoneNumberWithCountryCode = (countryCode, phoneNumber) => `${countryCode}${phoneNumber}`;
