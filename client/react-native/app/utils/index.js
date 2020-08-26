@@ -1,8 +1,5 @@
-import { getPhoneNumberWithCountryCode, getCountrylabels, getCompleteUrl, isIOS } from './utils';
+import { getPhoneNumberWithCountryCode } from './utils';
 
 export {
     getPhoneNumberWithCountryCode,
-    getCountrylabels,
-    getCompleteUrl,
-    isIOS
 };

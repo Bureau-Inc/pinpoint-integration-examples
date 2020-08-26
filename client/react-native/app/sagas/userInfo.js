@@ -1,4 +1,4 @@
-import { invokeApiUsingAxios } from '../api';
+import { invokeApi } from '../api';
 import {
     USERINFO_REQUEST,
     USERINFO_SUCCESS,
@@ -21,6 +21,6 @@ export async function getUserInfo(correlationId){
             failure: USERINFO_FAILURE
         }
     };
-    const response = await invokeApiUsingAxios(apiArgs, true);
+    const response = await invokeApi(apiArgs, true);
     return response;
 }

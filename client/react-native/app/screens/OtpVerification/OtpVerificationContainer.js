@@ -2,8 +2,7 @@ import React, { Component } from 'react';
 import { connect } from 'react-redux';
 
 import {
-    verifyOtp,
-    generateOtp
+    verifyOtp
 } from '../../sagas';
 import { navigateToLoginSuccessful } from '../../actions/navigationActions';
 import OtpVerificationView from './OtpVerificationView';
@@ -22,8 +21,7 @@ class OtpContainer extends Component {
 function mapDispatchToProps(dispatch) {
     return {
         showLoginSuccessfulScreen: navigateToLoginSuccessful,
-        verifyOtp,
-        generateOtp
+        verifyOtp
     };
 }
 export default connect(
