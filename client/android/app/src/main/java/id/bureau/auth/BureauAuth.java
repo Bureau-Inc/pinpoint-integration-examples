@@ -34,7 +34,7 @@ public class BureauAuth {
         } else {
             this.mode = mode;
         }
-        switch (mode) {
+        switch (this.mode) {
             case Sandbox:
                 host = "api.sandbox.bureau.id";
                 break;
