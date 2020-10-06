@@ -24,12 +24,12 @@ public class BureauService {
     public String authenticate(Context applicationContext, String correlationId, String message) {
         BureauAuth bureauAuth = new BureauAuth.Builder()
                 .mode(BureauAuth.Mode.Sandbox)
-                .clientId("Your client id")
+                .clientId("Your Client Id")
                 .build();
         String resultMessage = "";
         try {
-            bureauAuth.authenticate(applicationContext, correlationId, Long.parseLong(message));
-            resultMessage = correlationId + ": Auth Completed";
+            BureauAuth.AuthenticationStatus authenticationStatus = bureauAuth.authenticate(applicationContext, correlationId, Long.parseLong(message));
+            resultMessage = correlationId + ": " + authenticationStatus.getMessage();
         } catch (RuntimeException e) {
             resultMessage = correlationId + ": " + e.getMessage();
         }

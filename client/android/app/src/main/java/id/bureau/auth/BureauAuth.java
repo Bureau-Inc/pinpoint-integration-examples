@@ -3,21 +3,23 @@ package id.bureau.auth;
 import android.content.Context;
 import android.net.ConnectivityManager;
 import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
+import android.net.NetworkRequest;
 import android.os.Build;
 import android.util.Log;
 
 import androidx.annotation.RequiresApi;
 
 import java.io.IOException;
+import java.util.Date;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import okhttp3.Call;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
-
-import static android.content.Context.CONNECTIVITY_SERVICE;
 
 public class BureauAuth {
     private final Mode mode;
@@ -51,33 +53,125 @@ public class BureauAuth {
     }
 
     @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
-    public boolean authenticate(Context context, final String correlationId, final long mobileNumber) {
-        try {
-            Network mobileNetwork = getMobileNetwork(context);
-            if (mobileNetwork == null) {
-                String msg=  "Mobile network is not available";
-                Log.i("BureauAuth", msg);
-                throw new NetworkNotFoundException(msg);
+    public AuthenticationStatus authenticate(Context context, final String correlationId, final long mobileNumber) {
+        final AtomicInteger requestStatus = new AtomicInteger(0);
+        Date startTime = new Date();
+        triggerAuthenticationFlowViaConnectivityManager(context, correlationId, mobileNumber, requestStatus);
+        waitForWorkflowCompletion(requestStatus, startTime);
+        return buildAuthenticationStatus(requestStatus);
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+    private void triggerAuthenticationFlowViaConnectivityManager(Context context, final String correlationId, final long mobileNumber, final AtomicInteger requestStatus) {
+        final ConnectivityManager connectivityManager = (ConnectivityManager)
+                context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkRequest networkRequest = new NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            connectivityManager.requestNetwork(networkRequest,
+                    registerNetworkCallbackForOPlusDevices(correlationId, mobileNumber, connectivityManager, requestStatus), timeoutInMs);
+        } else {
+            connectivityManager.requestNetwork(networkRequest, registerCallbackForOMinusDevices(correlationId, mobileNumber, requestStatus));
+        }
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+    private ConnectivityManager.NetworkCallback registerCallbackForOMinusDevices(final String correlationId, final long mobileNumber, final AtomicInteger requestStatus) {
+        return new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onUnavailable() {
+                super.onUnavailable();
+                requestStatus.compareAndSet(0, -2);
             }
-            OkHttpClient okHttpClient = buildHttpClient(mobileNetwork);
+
+            @Override
+            public void onAvailable(Network network) {
+                super.onAvailable(network);
+                try {
+                    triggerAuthenticationFlow(correlationId, mobileNumber, network);
+                    requestStatus.compareAndSet(0, 1);
+                } catch (AuthenticationException e) {
+                    requestStatus.compareAndSet(0, -3);
+                }
+            }
+        };
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+    private ConnectivityManager.NetworkCallback registerNetworkCallbackForOPlusDevices(final String correlationId, final long mobileNumber, final ConnectivityManager connectivityManager, final AtomicInteger requestStatus) {
+        return new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onUnavailable() {
+                super.onUnavailable();
+                NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
+                if (activeNetworkInfo != null && activeNetworkInfo.isConnected()) {
+                    requestStatus.compareAndSet(0, -1);
+                }
+                requestStatus.compareAndSet(0, -2);
+            }
+
+            @Override
+            public void onAvailable(Network network) {
+                super.onAvailable(network);
+                try {
+                    triggerAuthenticationFlow(correlationId, mobileNumber, network);
+                    requestStatus.compareAndSet(0, 1);
+                } catch (AuthenticationException e) {
+                    requestStatus.compareAndSet(0, -3);
+                }
+            }
+        };
+    }
+
+    private AuthenticationStatus buildAuthenticationStatus(AtomicInteger requestStatus) {
+        switch (requestStatus.get()) {
+            case 1:
+                return AuthenticationStatus.Completed;
+            case -1:
+                return AuthenticationStatus.OnDifferentNetwork;
+            case -2:
+                return AuthenticationStatus.NetworkUnavailable;
+            case -3:
+                return AuthenticationStatus.ExceptionOnAuthenticate;
+            default:
+                return AuthenticationStatus.UnknownState;
+        }
+    }
+
+    private void waitForWorkflowCompletion(AtomicInteger requestStatus, Date startTime) {
+        long maxDuration = timeoutInMs * 2;
+        while (requestStatus.get() == 0) {
+            Date currentTime = new Date();
+            long duration = currentTime.getTime() - startTime.getTime();
+            if (duration >= maxDuration) {
+                break;
+            }
+        }
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+    private void triggerAuthenticationFlow(String correlationId, long mobileNumber, Network network) {
+        try {
+            OkHttpClient okHttpClient = buildHttpClient(network);
             triggerInitiateFlow(correlationId, mobileNumber, okHttpClient);
             triggerFinalizeFlow(correlationId, okHttpClient);
-            return true;
         } catch (IOException e) {
             Log.i("BureauAuth", e.getMessage());
-            throw new AuthenticationException("Unable to proceed with the authentication");
+            throw new AuthenticationException(e.getMessage());
         } catch (IllegalStateException e) {
             Log.i("BureauAuth", e.getMessage());
-            throw new AuthenticationException("Unable to proceed with the authentication");
+            throw new AuthenticationException(e.getMessage());
         } catch (IllegalArgumentException e) {
             Log.i("BureauAuth", e.getMessage());
-            throw new AuthenticationException("Unable to proceed with the authentication");
+            throw new AuthenticationException(e.getMessage());
         } catch (SecurityException e) {
             Log.i("BureauAuth", e.getMessage());
-            throw new AuthenticationException("Unable to proceed with the authentication");
+            throw new AuthenticationException(e.getMessage());
         } catch (RuntimeException e) {
             Log.i("BureauAuth", e.getMessage());
-            throw new AuthenticationException("Unable to proceed with the authentication");
+            throw new AuthenticationException(e.getMessage());
         }
     }
 
@@ -87,7 +181,7 @@ public class BureauAuth {
     }
 
     private void triggerInitiateFlow(String correlationId, long mobileNumber, OkHttpClient okHttpClient) throws IOException {
-        HttpUrl url = buildInititateUrl(correlationId, mobileNumber);
+        HttpUrl url = buildInitiateUrl(correlationId, mobileNumber);
         triggerFlow(url, okHttpClient);
     }
 
@@ -98,21 +192,6 @@ public class BureauAuth {
                 .build();
         Call call = okHttpClient.newCall(request);
         call.execute();
-    }
-
-    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
-    private Network getMobileNetwork(Context context) {
-        ConnectivityManager connectivityManager = (ConnectivityManager) context.getSystemService(CONNECTIVITY_SERVICE);
-        Network[] networks = connectivityManager.getAllNetworks();
-        Network mobileNetwork = null;
-        for (final Network network : networks) {
-            final NetworkInfo netInfo = connectivityManager.getNetworkInfo(network);
-            if (netInfo.getType() == ConnectivityManager.TYPE_MOBILE && netInfo.getState() == NetworkInfo.State.CONNECTED) {
-                mobileNetwork = network;
-                break;
-            }
-        }
-        return mobileNetwork;
     }
 
     @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
@@ -127,7 +206,7 @@ public class BureauAuth {
                 .build();
     }
 
-    private HttpUrl buildInititateUrl(String correlationId, long mobileNumber) {
+    private HttpUrl buildInitiateUrl(String correlationId, long mobileNumber) {
         return new HttpUrl.Builder()
                 .scheme("https")
                 .host(host)
@@ -149,8 +228,26 @@ public class BureauAuth {
                 .build();
     }
 
-    public static enum Mode {
+    public enum Mode {
         Sandbox, Production
+    }
+
+    public enum AuthenticationStatus {
+        Completed("Authentication flow completed"),
+        NetworkUnavailable("Mobile network is not available"),
+        OnDifferentNetwork("Device is using a different network"),
+        ExceptionOnAuthenticate("Exception occurred while trying to authenticate"),
+        UnknownState("Unknown authentication state");
+
+        private String message;
+
+        AuthenticationStatus(String message) {
+            this.message = message;
+        }
+
+        public String getMessage() {
+            return message;
+        }
     }
 
     public static class Builder {
@@ -196,18 +293,4 @@ public class BureauAuth {
             return message;
         }
     }
-
-    public static class NetworkNotFoundException extends RuntimeException {
-        private String message;
-
-        public NetworkNotFoundException(String message) {
-            this.message = message;
-        }
-
-        @Override
-        public String getMessage() {
-            return message;
-        }
-    }
-
 }
