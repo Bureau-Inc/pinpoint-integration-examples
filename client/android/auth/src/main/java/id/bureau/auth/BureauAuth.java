@@ -21,6 +21,7 @@ import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 
+
 public class BureauAuth {
     private final Mode mode;
     private final String clientId;
